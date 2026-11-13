@@ -142,6 +142,11 @@ ENDIF()
 
 TARGET_INCLUDE_DIRECTORIES(_singa_wrap PRIVATE ${PYTHON_INCLUDE_DIRS} ${NUMPY_INCLUDE_DIR})
 
+SET(NEURSTORE_PACKAGE_DATA "")
+IF(USE_ONNX_STORAGE)
+    SET(NEURSTORE_PACKAGE_DATA ", '_neurstore_wrap.so'")
+ENDIF()
+
 # substitute ${var} in setup.py.in to generate setup.py
 SET(SETUP_PY_IN "setup.py.in")
 SET(SETUP_PY    "${CMAKE_BINARY_DIR}/python/setup.py")

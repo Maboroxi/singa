@@ -85,6 +85,7 @@ OPTION(ENABLE_DIST "Enable distributed training" OFF)
 OPTION(DISABLE_WARNINGS "Disable warnings under windows" ON)
 OPTION(USE_MODULES "Compile dependent libs as submodules together with singa" OFF)
 OPTION(USE_DNNL "Use dnnl libs" OFF)
+OPTION(USE_ONNX_STORAGE "Build local compressed ONNX storage" OFF)
 OPTION(USE_DIST "Use nccl distributed module" OFF)
 
 # TODO: remove all USE_CBLAS in codes
@@ -181,6 +182,15 @@ ENDIF()
 
 IF (USE_PYTHON)
     ADD_SUBDIRECTORY(python)
+    IF(USE_ONNX_STORAGE)
+        FILE(WRITE ${CMAKE_BINARY_DIR}/python/singa/_storage_config.py "enabled = True\n")
+    ELSE()
+        FILE(WRITE ${CMAKE_BINARY_DIR}/python/singa/_storage_config.py "enabled = False\n")
+    ENDIF()
+ENDIF()
+
+IF (USE_ONNX_STORAGE)
+    ADD_SUBDIRECTORY(third_party/neurstore)
 ENDIF()
 
 IF (USE_JAVA)
