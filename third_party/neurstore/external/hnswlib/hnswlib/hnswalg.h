@@ -155,13 +155,24 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             free(data_level0_memory_);
         }
         data_level0_memory_ = nullptr;
-        for (tableint i = 0; i < cur_element_count; i++) {
-            if (element_levels_[i] > 0 && !is_memory_mapped_data_) {
-                free(linkLists_[i]);
+        // Stream loading can fail after reading the element count but before
+        // allocating the level table or upper-link array. Only inspect slots
+        // whose metadata was initialized; unread link pointers are null.
+        if (linkLists_ != nullptr && !is_memory_mapped_data_) {
+            const size_t initialized_elements =
+                std::min(cur_element_count.load(), element_levels_.size());
+            for (size_t i = 0; i < initialized_elements; i++) {
+                if (element_levels_[i] > 0) {
+                    free(linkLists_[i]);
+                }
             }
         }
         free(linkLists_);
         linkLists_ = nullptr;
+        element_levels_.clear();
+        label_lookup_.clear();
+        deleted_elements.clear();
+        num_deleted_ = 0;
         cur_element_count = 0;
         visited_list_pool_.reset(nullptr);
     }
@@ -809,7 +820,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
         visited_list_pool_.reset(new VisitedListPool(1, max_elements));
 
-        linkLists_ = (char **) malloc(sizeof(void *) * max_elements);
+        // Unread slots must stay safe to free if a later allocation/read fails.
+        linkLists_ = (char **) calloc(max_elements, sizeof(char *));
         if (linkLists_ == nullptr)
             throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
         element_levels_ = std::vector<int>(max_elements);

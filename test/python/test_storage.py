@@ -195,6 +195,71 @@ class TestNeurstore(unittest.TestCase):
             finally:
                 path.write_bytes(original)
 
+    def _check_index_error_in_subprocess(self, index, original):
+        # A native crash must fail this test without terminating the test runner.
+        program = """
+import resource
+import sys
+from pathlib import Path
+from singa.storage import Neurstore
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+original = sys.stdin.buffer.read()
+store = Neurstore(sys.argv[1])
+try:
+    store.loadModel('model')
+except RuntimeError:
+    print('caught RuntimeError', flush=True)
+else:
+    raise AssertionError('Invalid index was accepted')
+Path(sys.argv[2]).write_bytes(original)
+assert store.loadModel('model').graph.initializer
+print('valid index reloaded', flush=True)
+"""
+        result = subprocess.run(
+            [sys.executable, '-c', program, str(self.path), str(index)],
+            input=original, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=30)
+        self.assertEqual(result.returncode, 0,
+                         result.stderr.decode(errors='replace'))
+        self.assertIn(b'caught RuntimeError', result.stdout)
+        self.assertIn(b'valid index reloaded', result.stdout)
+
+    def test_truncated_index_cleanup_in_subprocess(self):
+        self.store.saveModel('model', self.model, 1e-6)
+        index = next(self.path.glob('*.index'))
+        original = index.read_bytes()
+        size_t = struct.calcsize('P')
+        # The legacy wrapper has four ints, two int64s and two size_t fields.
+        wrapper_size = 4 * 4 + 2 * 8 + 2 * size_t
+        count_end = wrapper_size + 3 * size_t
+        # HNSW header: ten size_t fields, two 32-bit fields and one double.
+        header_end = wrapper_size + 10 * size_t + 2 * 4 + 8
+        cut_points = [count_end, count_end - 1, count_end + 1,
+                      header_end - 1, header_end, header_end + 1,
+                      len(original) - 1, 3]
+        try:
+            for cut in cut_points:
+                with self.subTest(cut=cut):
+                    index.write_bytes(original[:cut])
+                    self._check_index_error_in_subprocess(index, original)
+        finally:
+            index.write_bytes(original)
+        self.check_model(self.store.loadModel('model'))
+
+    def test_invalid_index_header_cleanup_in_subprocess(self):
+        self.store.saveModel('model', self.model, 1e-6)
+        index = next(self.path.glob('*.index'))
+        original = index.read_bytes()
+        wrapper_size = 4 * 4 + 2 * 8 + 2 * struct.calcsize('P')
+        corrupted = bytearray(original)
+        corrupted[wrapper_size] = 1  # offsetLevel0 must be zero.
+        try:
+            index.write_bytes(corrupted)
+            self._check_index_error_in_subprocess(index, original)
+        finally:
+            index.write_bytes(original)
+        self.check_model(self.store.loadModel('model'))
+
     def test_write_failure_keeps_existing_models(self):
         self.store.saveModel('model', self.model, 1e-6)
         self.path.chmod(0o555)

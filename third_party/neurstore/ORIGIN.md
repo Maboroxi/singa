@@ -12,3 +12,8 @@ Local adaptations: storage-only build; sequential tensor codec entry point;
 checked facade deserialization and input validation; atomic index/router writes;
 router and HNSW header checks; safe logarithm/UINT32 quantization arithmetic.
 The residual codec's known tolerance limitation is retained.
+
+2026-11-13: make HNSW cleanup tolerate partially initialized stream loads,
+zero-initialize upper-link pointer slots, and reset loaded metadata on clear.
+The disk format and empty-constructor loading path are retained. Regression
+coverage includes truncated/corrupt indexes in isolated Python subprocesses.
